@@ -4,9 +4,11 @@
 import {
   onAuthChange, getMe,
   registerUser, loginUser, logoutUser, resetPassword,
+  updateMyProfile, uploadProfilePhoto,
   logActivity, watchActivity, watchStudents,
-  watchCourses, addCourse, deleteCourse,
-  enrollCourse, watchMyEnrollments,
+  watchCourses, addCourse, deleteCourse, getCourse, uploadCourseImage,
+  addCourseContent, deleteCourseContent, watchCourseContent,
+  enrollCourse, watchMyEnrollments, grantCourseAccess,
   uploadPaymentProof, watchPayments, updatePaymentStatus,
   addExam, deleteExam, watchExams, submitExam, watchExamResults, watchMyResults,
   getSettings, setSettings, askAI,
@@ -24,6 +26,7 @@ function toast(msg, type = "") {
 }
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = ts => { try { return ts?.toDate?.().toLocaleString("ar-EG") || ""; } catch { return ""; } };
+const fmtDate = ts => { try { return ts?.toDate?.().toLocaleDateString("en-US") || "-"; } catch { return "-"; } };
 const initials = n => (n || "؟").trim().split(/\s+/).slice(0, 2).map(x => x[0]).join("");
 
 let unsubs = [];
@@ -40,9 +43,9 @@ function renderHeader() {
   const nav = $("#nav"), ua = $("#userArea");
   nav.innerHTML = ""; ua.innerHTML = "";
 
-  const icons = { home:"🏠", login:"🔑", register:"✨", dashboard:"🏡", courses:"📚", exams:"📝", chat:"💬" };
+  const icons = { home:"🏠", login:"🔑", register:"✨", dashboard:"🏡", profile:"👤", courses:"📚", exams:"📝", chat:"💬" };
   const links = me.isLoggedIn
-    ? [["dashboard","لوحتي"],["courses","الكورسات"],["exams","الامتحانات"],["chat","المساعد الذكي"]]
+    ? [["dashboard","لوحتي"],["profile","ملفي"],["courses","الكورسات"],["exams","الامتحانات"],["chat","المساعد الذكي"]]
     : [["home","الرئيسية"],["login","دخول"],["register","حساب جديد"]];
 
   links.forEach(([r, t]) => {
@@ -54,7 +57,11 @@ function renderHeader() {
   });
 
   if (me.isLoggedIn) {
-    const av = document.createElement("div"); av.className = "avatar"; av.textContent = initials(me.profile?.name);
+    const av = document.createElement("div"); av.className = "avatar";
+    if (me.profile?.photoURL) { av.classList.add("has-photo"); av.innerHTML = `<img src="${me.profile.photoURL}" alt="">`; }
+    else av.textContent = initials(me.profile?.name);
+    av.style.cursor = "pointer";
+    av.onclick = () => { location.hash = "#profile"; };
     const nm = document.createElement("span"); nm.className = "user-name"; nm.textContent = me.profile?.name || "مستخدم";
     const out = document.createElement("button"); out.className = "logout-btn"; out.textContent = "خروج";
     out.onclick = async () => { await logoutUser(); location.hash = "#home"; };
@@ -102,23 +109,103 @@ function viewLogin() {
 }
 
 /* ================= التسجيل ================= */
+const STAGES = ["تعليم حر", "أولى ثانوي", "ثانية ثانوي", "ثالثة ثانوي"];
+const SUBJECTS = ["Python", "JavaScript", "HTML/CSS", "Java", "C++", "C#"];
+
 function viewRegister() {
   app.innerHTML = `
-    <div class="form card">
-      <h2 class="page-title" style="font-size:20px">إنشاء حساب جديد</h2>
-      <div><label>الاسم بالكامل</label><input id="name"></div>
+    <div class="form card register">
+      <h2 class="page-title" style="font-size:22px;text-align:center">إنشاء حساب</h2>
+      <p class="muted" style="text-align:center;margin-top:-8px">ابدأ رحلتك معنا</p>
+      <div><label>الاسم الكامل</label><input id="name" autocomplete="name"></div>
       <div><label>البريد الإلكتروني</label><input id="email" type="email" autocomplete="email"></div>
+      <div><label>السن</label><input id="age" type="number" min="4" max="99" placeholder="مثال: 16"></div>
+      <div><label>المرحلة الدراسية</label>
+        <select id="stage">${STAGES.map(s => `<option>${s}</option>`).join("")}</select>
+      </div>
+      <div><label>رقم الطالب</label><input id="studentPhone" type="tel" placeholder="01xxxxxxxxx"></div>
+      <div><label>رقم ولي الأمر</label><input id="parentPhone" type="tel" placeholder="01xxxxxxxxx"></div>
       <div><label>كلمة المرور (6 حروف على الأقل)</label><input id="pass" type="password" autocomplete="new-password"></div>
+      <div><label>تأكيد كلمة المرور</label><input id="pass2" type="password" autocomplete="new-password"></div>
       <button class="btn" id="regBtn">إنشاء الحساب</button>
       <p class="muted" style="font-size:14px;text-align:center">عندك حساب؟ <a href="#login" style="color:var(--acc2)">سجّل دخول</a></p>
     </div>`;
   $("#regBtn").onclick = async () => {
-    const nm = $("#name").value.trim(), em = $("#email").value, ps = $("#pass").value;
+    const nm = $("#name").value.trim(), em = $("#email").value;
+    const ps = $("#pass").value, ps2 = $("#pass2").value;
+    const age = $("#age").value.trim(), stage = $("#stage").value;
+    const studentPhone = $("#studentPhone").value.trim(), parentPhone = $("#parentPhone").value.trim();
     if (!nm || !em || ps.length < 6) return toast("تأكد من البيانات (6 حروف على الأقل)","err");
+    if (ps !== ps2) return toast("كلمة المرور وتأكيدها مش متطابقين","err");
     $("#regBtn").disabled = true;
-    try { await registerUser(em, ps, nm); toast("تم إنشاء الحساب ✅","ok"); location.hash = "#dashboard"; }
+    try {
+      await registerUser(em, ps, { name: nm, age, stage, studentPhone, parentPhone });
+      toast("تم إنشاء الحساب ✅","ok"); location.hash = "#dashboard";
+    }
     catch (e) { toast(e.code === "auth/email-already-in-use" ? "الإيميل مستخدم" : e.message, "err"); }
     finally { $("#regBtn").disabled = false; }
+  };
+}
+
+/* ================= ✅ الملف الشخصي ================= */
+function viewProfile() {
+  const me = getMe();
+  const p = me.profile || {};
+  app.innerHTML = `
+    <div class="page-title">ملفي الشخصي</div>
+    <div class="page-sub">بياناتك وصورتك الشخصية.</div>
+    <div class="card" style="max-width:460px;margin:0 auto">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div class="profile-avatar" id="profileAvatarBox">
+          ${p.photoURL ? `<img src="${esc(p.photoURL)}" alt="">` : `<span>${esc(initials(p.name))}</span>`}
+        </div>
+        <label class="btn sm ghost" style="cursor:pointer">
+          📷 تغيير الصورة
+          <input type="file" id="photoInput" accept="image/*" style="display:none">
+        </label>
+      </div>
+      <div class="space"></div>
+      <div id="viewMode">
+        <div class="profile-row"><span class="muted">الاسم</span><b>${esc(p.name || "-")}</b></div>
+        <div class="profile-row"><span class="muted">البريد الإلكتروني</span><b>${esc(p.email || "-")}</b></div>
+        <div class="profile-row"><span class="muted">السن</span><b>${esc(p.age || "-")}</b></div>
+        <div class="profile-row"><span class="muted">المرحلة الدراسية</span><b>${esc(p.stage || "-")}</b></div>
+        <div class="profile-row"><span class="muted">رقم الطالب</span><b>${esc(p.studentPhone || "-")}</b></div>
+        <div class="profile-row"><span class="muted">رقم ولي الأمر</span><b>${esc(p.parentPhone || "-")}</b></div>
+        <div class="profile-row"><span class="muted">تاريخ التسجيل</span><b>${fmtDate(p.createdAt)}</b></div>
+        <div class="space"></div>
+        <button class="btn" id="editBtn" style="width:100%">✏️ تعديل بياناتي</button>
+      </div>
+      <div id="editMode" class="hidden" style="display:flex;flex-direction:column;gap:12px">
+        <div><label>الاسم</label><input id="e-name" value="${esc(p.name || "")}"></div>
+        <div><label>السن</label><input id="e-age" type="number" value="${esc(p.age || "")}"></div>
+        <div><label>المرحلة الدراسية</label>
+          <select id="e-stage">${STAGES.map(s => `<option ${p.stage === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+        </div>
+        <div><label>رقم الطالب</label><input id="e-sp" value="${esc(p.studentPhone || "")}"></div>
+        <div><label>رقم ولي الأمر</label><input id="e-pp" value="${esc(p.parentPhone || "")}"></div>
+        <div class="row">
+          <button class="btn" id="saveProfileBtn">حفظ</button>
+          <button class="btn ghost" id="cancelEditBtn">إلغاء</button>
+        </div>
+      </div>
+    </div>`;
+
+  $("#photoInput").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { await uploadProfilePhoto(f); toast("تم تحديث الصورة ✅","ok"); renderHeader(); viewProfile(); }
+    catch (err) { toast(err.message,"err"); }
+  };
+  $("#editBtn").onclick = () => { $("#viewMode").classList.add("hidden"); $("#editMode").classList.remove("hidden"); };
+  $("#cancelEditBtn").onclick = () => { $("#editMode").classList.add("hidden"); $("#viewMode").classList.remove("hidden"); };
+  $("#saveProfileBtn").onclick = async () => {
+    const data = {
+      name: $("#e-name").value.trim(), age: $("#e-age").value.trim(),
+      stage: $("#e-stage").value, studentPhone: $("#e-sp").value.trim(), parentPhone: $("#e-pp").value.trim(),
+    };
+    if (!data.name) return toast("الاسم مطلوب","err");
+    try { await updateMyProfile(data); toast("تم حفظ التعديلات ✅","ok"); renderHeader(); viewProfile(); }
+    catch (err) { toast(err.message,"err"); }
   };
 }
 
@@ -130,17 +217,74 @@ function viewCourses() {
     const box = $("#courseList"); if (!box) return;
     box.innerHTML = list.length ? list.map(c => `
       <div class="card">
+        ${c.imageUrl ? `<img src="${esc(c.imageUrl)}" alt="" class="course-thumb">` : ""}
         <h3>${esc(c.title)}</h3><p>${esc(c.description || "")}</p><div class="space"></div>
         <div class="row">
-          <span class="badge">${esc(c.price || "مجاني")}</span>
-          ${c.videoUrl ? `<a class="btn sm ghost" href="${esc(c.videoUrl)}" target="_blank" rel="noopener">مشاهدة</a>` : ""}
+          ${c.stage ? `<span class="badge">${esc(c.stage)}</span>` : ""}
+          ${c.subject ? `<span class="badge">${esc(c.subject)}</span>` : ""}
+          <span class="badge ok">${esc(c.price || "مجاني")}</span>
+        </div>
+        <div class="space"></div>
+        <div class="row">
+          <button class="btn sm ghost" data-open="${c.id}">📂 المحتوى</button>
           <button class="btn sm" data-enroll="${c.id}" data-title="${esc(c.title)}">اشترك</button>
         </div>
       </div>`).join("") : `<div class="empty">لا توجد كورسات بعد.</div>`;
+    $$("[data-open]", box).forEach(b => b.onclick = () => { location.hash = "#course/" + b.dataset.open; });
     $$("[data-enroll]", box).forEach(b => b.onclick = async () => {
       try { await enrollCourse(b.dataset.enroll, b.dataset.title); toast("تم الاشتراك ✅","ok"); }
       catch (e) { toast(e.message,"err"); }
     });
+  }));
+}
+
+/* ================= ✅ تفاصيل الكورس ومحتواه ================= */
+async function viewCourseDetail(id) {
+  app.innerHTML = `<div class="page-title">تفاصيل الكورس</div><div id="courseDetailBox"><div class="empty">جاري التحميل…</div></div>`;
+  let c = null;
+  try { c = await getCourse(id); } catch {}
+  const box = $("#courseDetailBox"); if (!box) return;
+  if (!c) { box.innerHTML = `<div class="empty">الكورس مش موجود. <a href="#courses" style="color:var(--acc2)">رجوع للكورسات</a></div>`; return; }
+
+  const titleEl = $(".page-title"); if (titleEl) titleEl.textContent = c.title;
+  box.innerHTML = `
+    <div class="card">
+      ${c.imageUrl ? `<img src="${esc(c.imageUrl)}" alt="" class="course-thumb">` : ""}
+      <p>${esc(c.description || "")}</p><div class="space"></div>
+      <div class="row">
+        ${c.stage ? `<span class="badge">${esc(c.stage)}</span>` : ""}
+        ${c.subject ? `<span class="badge">${esc(c.subject)}</span>` : ""}
+        <span class="badge ok">${esc(c.price || "مجاني")}</span>
+      </div>
+      <div class="space"></div>
+      <div class="row">
+        <button class="btn sm" data-enroll="${c.id}" data-title="${esc(c.title)}">اشترك</button>
+      </div>
+    </div>
+    <div class="space"></div>
+    <h3 style="margin-bottom:12px">محتوى الكورس</h3>
+    <div id="contentBox" class="grid"><div class="empty">جاري التحميل…</div></div>`;
+
+  $$("[data-enroll]", box).forEach(b => b.onclick = async () => {
+    try { await enrollCourse(b.dataset.enroll, b.dataset.title); toast("تم الاشتراك ✅","ok"); }
+    catch (e) { toast(e.message,"err"); }
+  });
+
+  const typeMeta = { video: ["🎬","فيديو"], pdf: ["📄","PDF"], exam: ["📝","امتحان"] };
+  sub(watchCourseContent(id, items => {
+    const cb = $("#contentBox"); if (!cb) return;
+    cb.innerHTML = items.length ? items.map(it => {
+      const [ic, lb] = typeMeta[it.type] || ["📎", it.type];
+      return `
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h3>${ic} ${esc(it.title)}</h3>
+          <span class="badge">${lb}</span>
+        </div>
+        <div class="space"></div>
+        <a class="btn sm ghost" href="${esc(it.url)}" target="_blank" rel="noopener">فتح المحتوى</a>
+      </div>`;
+    }).join("") : `<div class="empty">لسه المعلم مضافش محتوى للكورس ده.</div>`;
   }));
 }
 
@@ -304,6 +448,7 @@ function viewTeacherDashboard() {
       <button data-tab="activity" class="active">النشاط اللحظي</button>
       <button data-tab="students">الطلاب</button>
       <button data-tab="courses">الكورسات</button>
+      <button data-tab="content">محتوى الكورسات</button>
       <button data-tab="exams">الامتحانات</button>
       <button data-tab="results">النتائج</button>
       <button data-tab="payments">المدفوعات</button>
@@ -352,35 +497,57 @@ function renderTab(tab) {
   if (tab === "courses") {
     body.innerHTML = `
       <div class="card">
-        <h3>إضافة كورس</h3><div class="space"></div>
+        <h3>إنشاء كورس جديد</h3><div class="space"></div>
         <div style="display:grid;gap:10px">
-          <input id="c-title" placeholder="اسم الكورس">
+          <input id="c-title" placeholder="عنوان الكورس">
           <textarea id="c-desc" rows="3" placeholder="وصف الكورس"></textarea>
-          <input id="c-video" placeholder="رابط الفيديو">
-          <input id="c-price" placeholder="السعر (مثال: 100 ج)">
-          <button class="btn" id="addCourseBtn">إضافة</button>
+          <select id="c-stage">${STAGES.map(s => `<option>${esc(s)}</option>`).join("")}</select>
+          <select id="c-subject">${SUBJECTS.map(s => `<option>${esc(s)}</option>`).join("")}</select>
+          <input id="c-price" placeholder="السعر (0 = مجاني)">
+          <label class="muted" style="font-size:13px">صورة الكورس</label>
+          <input id="c-image" type="file" accept="image/*">
+          <button class="btn" id="addCourseBtn">نشر للطلاب</button>
         </div>
       </div><div class="space"></div>
       <div id="coursesBox" class="grid"><div class="empty">جاري التحميل…</div></div>`;
     $("#addCourseBtn").onclick = async () => {
       const t = $("#c-title").value.trim();
       if (!t) return toast("اكتب اسم الكورس","err");
-      await addCourse({ title: t, description: $("#c-desc").value.trim(), videoUrl: $("#c-video").value.trim(), price: $("#c-price").value.trim() || "مجاني" });
-      $("#c-title").value = $("#c-desc").value = $("#c-video").value = $("#c-price").value = "";
-      toast("تمت الإضافة ✅","ok");
+      $("#addCourseBtn").disabled = true;
+      try {
+        let imageUrl = "";
+        const file = $("#c-image").files[0];
+        if (file) imageUrl = await uploadCourseImage(file);
+        await addCourse({
+          title: t, description: $("#c-desc").value.trim(),
+          stage: $("#c-stage").value, subject: $("#c-subject").value,
+          price: $("#c-price").value.trim() || "مجاني", imageUrl,
+        });
+        $("#c-title").value = $("#c-desc").value = $("#c-price").value = ""; $("#c-image").value = "";
+        toast("تم نشر الكورس ✅","ok");
+      } catch (e) { toast(e.message,"err"); }
+      finally { $("#addCourseBtn").disabled = false; }
     };
     sub(watchCourses(list => {
       const box = $("#coursesBox"); if (!box) return;
       box.innerHTML = list.length ? list.map(c => `
-        <div class="card"><h3>${esc(c.title)}</h3><p>${esc(c.description || "")}</p><div class="space"></div>
-          <div class="row"><span class="badge">${esc(c.price || "مجاني")}</span>
-          <button class="btn sm err" data-del="${c.id}">حذف</button></div></div>`).join("")
+        <div class="card">
+          ${c.imageUrl ? `<img src="${esc(c.imageUrl)}" alt="" class="course-thumb">` : ""}
+          <h3>${esc(c.title)}</h3><p>${esc(c.description || "")}</p><div class="space"></div>
+          <div class="row">
+            ${c.stage ? `<span class="badge">${esc(c.stage)}</span>` : ""}
+            ${c.subject ? `<span class="badge">${esc(c.subject)}</span>` : ""}
+            <span class="badge ok">${esc(c.price || "مجاني")}</span>
+            <button class="btn sm err" data-del="${c.id}">حذف</button>
+          </div>
+        </div>`).join("")
         : `<div class="empty">لا توجد كورسات.</div>`;
       $$("[data-del]", box).forEach(b => b.onclick = async () => {
         if (confirm("تأكيد الحذف؟")) { await deleteCourse(b.dataset.del); toast("تم الحذف","ok"); }
       });
     }));
   }
+  if (tab === "content") { body.innerHTML = contentBuilderHTML(); bindContentBuilder(); }
   if (tab === "settings") {
     body.innerHTML = `
       <div class="card">
@@ -396,14 +563,46 @@ function renderTab(tab) {
     };
   }
 
-  if (tab === "students") sub(watchStudents(list => {
-    const box = $("#stuBox"); if (!box) return;
-    box.innerHTML = list.length ? list.map(u => `
-      <div class="log-row">
-        <div><b>${esc(u.name)}</b><div class="muted" style="font-size:12px">${esc(u.email)}</div></div>
-        <span class="muted" style="font-size:12px">آخر ظهور: ${fmt(u.lastSeen)}</span>
-      </div>`).join("") : `<div class="empty">لا يوجد طلاب.</div>`;
-  }));
+  if (tab === "students") {
+    let studentsList = [], coursesList = [];
+    const drawStudents = () => {
+      const box = $("#stuBox"); if (!box) return;
+      box.innerHTML = studentsList.length ? studentsList.map(u => `
+        <div class="card">
+          <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap">
+            <div>
+              <h3>${esc(u.name)}</h3>
+              <div class="muted" style="font-size:13px">${esc(u.email)} • ${esc(u.stage || "-")}</div>
+              <div class="muted" style="font-size:13px">رقم الطالب: ${esc(u.studentPhone || "-")} | رقم ولي الأمر: ${esc(u.parentPhone || "-")}</div>
+            </div>
+            <div class="avatar" style="width:48px;height:48px;font-size:16px">
+              ${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="">` : esc(initials(u.name))}
+            </div>
+          </div>
+          <div class="space"></div>
+          <div class="row">
+            <button class="btn sm ghost" data-grant="${u.id}" data-name="${esc(u.name)}" data-email="${esc(u.email)}">فتح كورس</button>
+            <select data-course-for="${u.id}" style="flex:1;min-width:140px">
+              ${coursesList.length ? coursesList.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join("") : `<option value="">لا توجد كورسات</option>`}
+            </select>
+          </div>
+        </div>`).join("") : `<div class="empty">لا يوجد طلاب.</div>`;
+
+      $$("[data-grant]", box).forEach(b => b.onclick = async () => {
+        const sel = $(`select[data-course-for="${b.dataset.grant}"]`, box);
+        const courseId = sel?.value; if (!courseId) return toast("اختر كورس أولاً","err");
+        const course = coursesList.find(c => c.id === courseId);
+        b.disabled = true;
+        try {
+          await grantCourseAccess({ uid: b.dataset.grant, name: b.dataset.name, email: b.dataset.email }, courseId, course?.title || "");
+          toast(`تم فتح "${course?.title}" لـ ${b.dataset.name} ✅`,"ok");
+        } catch (e) { toast(e.message,"err"); }
+        finally { b.disabled = false; }
+      });
+    };
+    sub(watchStudents(list => { studentsList = list; drawStudents(); }));
+    sub(watchCourses(list => { coursesList = list; drawStudents(); }));
+  }
 
   if (tab === "results") sub(watchExamResults(list => {
     const box = $("#resBox"); if (!box) return;
@@ -436,6 +635,94 @@ function renderTab(tab) {
       $$("[data-no]", box).forEach(b => b.onclick = async () => { await updatePaymentStatus(b.dataset.no, "rejected", null, b.dataset.t); toast("تم الرفض","ok"); });
     }));
   }
+}
+
+/* ================= ✅ إضافة محتوى للكورس (فيديو / PDF / امتحان) ================= */
+function contentBuilderHTML() {
+  return `
+  <div class="card">
+    <h3>إضافة محتوى للكورس (فيديو / PDF / امتحان)</h3><div class="space"></div>
+    <div style="display:grid;gap:10px">
+      <select id="ct-course"><option value="">جاري تحميل الكورسات…</option></select>
+      <select id="ct-type">
+        <option value="video">فيديو</option>
+        <option value="pdf">PDF</option>
+        <option value="exam">امتحان</option>
+      </select>
+      <input id="ct-title" placeholder="عنوان المحتوى">
+      <input id="ct-url" placeholder="الرابط (فيديو أو PDF أو امتحان)">
+      <button class="btn" id="ct-addBtn">نشر للطلاب</button>
+    </div>
+  </div>
+  <div class="space"></div>
+  <h3 style="margin-bottom:12px">المحتوى المضاف</h3>
+  <div id="ct-list" class="grid"><div class="empty">اختر كورس بالأعلى لعرض محتواه.</div></div>`;
+}
+
+function bindContentBuilder() {
+  let courses = [];
+  let contentUnsub = null;
+  const stopContent = () => { if (contentUnsub) { contentUnsub(); contentUnsub = null; } };
+  sub(stopContent);
+
+  const typeMeta = { video: ["🎬","فيديو"], pdf: ["📄","PDF"], exam: ["📝","امتحان"] };
+
+  function loadContentList() {
+    const listBox = $("#ct-list"); if (!listBox) return;
+    const courseId = $("#ct-course")?.value;
+    stopContent();
+    if (!courseId) { listBox.innerHTML = `<div class="empty">اختر كورس بالأعلى لعرض محتواه.</div>`; return; }
+    listBox.innerHTML = `<div class="empty">جاري التحميل…</div>`;
+    contentUnsub = watchCourseContent(courseId, items => {
+      const box = $("#ct-list"); if (!box) return;
+      box.innerHTML = items.length ? items.map(it => {
+        const [ic, lb] = typeMeta[it.type] || ["📎", it.type];
+        return `
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <h3>${ic} ${esc(it.title)}</h3><span class="badge">${lb}</span>
+          </div>
+          <div class="space"></div>
+          <div class="row">
+            <a class="btn sm ghost" href="${esc(it.url)}" target="_blank" rel="noopener">فتح</a>
+            <button class="btn sm err" data-delc="${it.id}">حذف</button>
+          </div>
+        </div>`;
+      }).join("") : `<div class="empty">لسه مفيش محتوى لهذا الكورس.</div>`;
+      $$("[data-delc]", box).forEach(b => b.onclick = async () => {
+        if (confirm("تأكيد حذف المحتوى؟")) { await deleteCourseContent(b.dataset.delc); toast("تم الحذف","ok"); }
+      });
+    });
+  }
+
+  sub(watchCourses(list => {
+    courses = list;
+    const sel = $("#ct-course"); if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = list.length
+      ? list.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join("")
+      : `<option value="">لا توجد كورسات — أضف كورس أولاً</option>`;
+    if (cur && list.some(c => c.id === cur)) sel.value = cur;
+    loadContentList();
+  }));
+
+  $("#ct-course").onchange = loadContentList;
+
+  $("#ct-addBtn").onclick = async () => {
+    const courseId = $("#ct-course").value;
+    if (!courseId) return toast("اختر كورس أولاً","err");
+    const title = $("#ct-title").value.trim();
+    const url = $("#ct-url").value.trim();
+    if (!title || !url) return toast("اكتب العنوان والرابط","err");
+    const course = courses.find(c => c.id === courseId);
+    $("#ct-addBtn").disabled = true;
+    try {
+      await addCourseContent({ courseId, courseTitle: course?.title || "", type: $("#ct-type").value, title, url });
+      $("#ct-title").value = ""; $("#ct-url").value = "";
+      toast("تم نشر المحتوى ✅","ok");
+    } catch (e) { toast(e.message,"err"); }
+    finally { $("#ct-addBtn").disabled = false; }
+  };
 }
 
 /* ================= ✅ منشئ الامتحانات ================= */
@@ -570,11 +857,13 @@ function viewChat() {
 function render() {
   cleanSubs();
   const me = getMe();
-  if (!me.isLoggedIn && ["dashboard","chat","exams"].includes(route)) route = "login";
+  if (!me.isLoggedIn && ["dashboard","chat","exams","profile"].includes(route)) route = "login";
   renderHeader();
+  if (route.startsWith("course/")) return viewCourseDetail(route.slice(7));
   switch (route) {
     case "login":     return viewLogin();
     case "register":  return viewRegister();
+    case "profile":   return viewProfile();
     case "courses":   return viewCourses();
     case "exams":     return viewExams();
     case "dashboard": return me.isTeacher ? viewTeacherDashboard() : viewDashboard();

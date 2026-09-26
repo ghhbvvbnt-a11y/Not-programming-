@@ -56,9 +56,10 @@ a{color:var(--acc2)}
 
 .user-area{display:flex;align-items:center;gap:10px}
 .user-name{font-size:14px;font-weight:600;color:var(--txt)}
-.avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;
+.avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;overflow:hidden;
   background:linear-gradient(135deg,var(--acc),var(--pink),var(--acc2));font-weight:800;font-size:13px;color:#fff;
   box-shadow:0 4px 14px rgba(124,92,255,.4)}
+.avatar img{width:100%;height:100%;object-fit:cover}
 .logout-btn{background:var(--card);border:1px solid var(--line);color:var(--muted);padding:9px 16px;
   border-radius:var(--r-pill);cursor:pointer;font-size:13px;font-weight:600;transition:.2s}
 .logout-btn:hover{background:var(--card2);color:var(--err);border-color:rgba(251,69,112,.35)}
@@ -98,6 +99,11 @@ a{color:var(--acc2)}
 .form{max-width:420px;margin:26px auto;display:flex;flex-direction:column;gap:14px;text-align:center;position:relative}
 .form.card::before{content:"🔒";display:grid;place-items:center;width:56px;height:56px;margin:0 auto 4px;
   border-radius:50%;background:rgba(124,92,255,.14);border:1px solid rgba(124,92,255,.3);font-size:20px}
+.form.card.register::before{
+  content:"";
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237c5cff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='7.5' r='3.3'/%3E%3Cpath d='M3.2 19c0-3.3 2.6-5.6 5.8-5.6s5.8 2.3 5.8 5.6'/%3E%3Cpath d='M18 4.5v5M15.5 7h5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:center;background-size:26px;
+}
 .form label{text-align:right;display:block}
 .form > div{display:flex;flex-direction:column;gap:6px}
 label{font-size:13.5px;color:var(--muted);font-weight:500}
@@ -106,6 +112,26 @@ input,select,textarea{width:100%;padding:13px 16px;border-radius:var(--r-pill);b
 textarea{border-radius:var(--r-sm)}
 input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(124,92,255,.22)}
 input::placeholder,textarea::placeholder{color:#5c5f76}
+select{appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238d90a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:left 16px center;background-size:14px;padding-left:40px}
+input[type="file"]{padding:9px 12px;font-size:13px;cursor:pointer;border-radius:var(--r-sm)}
+input[type="file"]::-webkit-file-upload-button{background:var(--card2);border:1px solid var(--line2);color:var(--txt);
+  padding:8px 14px;border-radius:var(--r-pill);margin-inline-end:10px;cursor:pointer;font-weight:600;transition:.2s;font-size:13px}
+input[type="file"]::-webkit-file-upload-button:hover{background:var(--line2)}
+
+/* ===== الملف الشخصي ===== */
+.profile-avatar{width:96px;height:96px;border-radius:50%;overflow:hidden;display:grid;place-items:center;flex-shrink:0;
+  background:linear-gradient(135deg,var(--acc),var(--pink),var(--acc2));font-size:28px;font-weight:800;color:#fff;
+  box-shadow:0 8px 24px rgba(124,92,255,.4);border:3px solid var(--card2)}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 2px;
+  border-bottom:1px solid var(--line);font-size:14.5px;text-align:right}
+.profile-row:last-of-type{border-bottom:none}
+.profile-row b{font-weight:700}
+
+/* ===== صورة الكورس ===== */
+.course-thumb{width:100%;max-height:150px;object-fit:cover;border-radius:var(--r-sm);margin-bottom:12px;display:block}
 
 /* ===== الأزرار ===== */
 .btn{padding:13px 22px;border:none;border-radius:var(--r-pill);cursor:pointer;font-weight:700;font-size:14.5px;

@@ -69,16 +69,44 @@ export const getMe = () => ({
 /* ============================================================
    1) الحساب
    ============================================================ */
-export async function registerUser(email, password, name) {
+export async function registerUser(email, password, profile = {}) {
   const e = email.trim().toLowerCase();
+  const name = (typeof profile === "string" ? profile : profile.name) || "";
   const cred = await createUserWithEmailAndPassword(auth, e, password);
   await updateProfile(cred.user, { displayName: name });
   const role = isTeacherEmail(e) ? "teacher" : "student";
   await setDoc(doc(db, "users", cred.user.uid), {
-    name, email: e, role, createdAt: serverTimestamp(), lastSeen: serverTimestamp(),
+    name, email: e, role,
+    age: profile.age || "", stage: profile.stage || "",
+    studentPhone: profile.studentPhone || "", parentPhone: profile.parentPhone || "",
+    photoURL: "", createdAt: serverTimestamp(), lastSeen: serverTimestamp(),
   });
   await logActivity("register", null, "أنشأ حساب جديد");
   return cred.user;
+}
+
+/* ===== تعديل الملف الشخصي + الصورة ===== */
+export async function updateMyProfile(data) {
+  const u = auth.currentUser; if (!u) throw new Error("سجّل دخول الأول");
+  await updateDoc(doc(db, "users", u.uid), data);
+  if (data.name) { try { await updateProfile(u, { displayName: data.name }); } catch {} }
+  currentProfile = { ...(currentProfile || {}), ...data };
+  broadcast();
+}
+
+export async function uploadProfilePhoto(file) {
+  const u = auth.currentUser; if (!u) throw new Error("سجّل دخول الأول");
+  if (!file.type.startsWith("image/")) throw new Error("اختر ملف صورة فقط");
+  if (file.size > 4 * 1024 * 1024) throw new Error("حجم الصورة أكبر من 4 ميجا");
+  const path = `profiles/${u.uid}/${Date.now()}_${file.name}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file);
+  const url = await getDownloadURL(storageRef);
+  await updateDoc(doc(db, "users", u.uid), { photoURL: url });
+  try { await updateProfile(u, { photoURL: url }); } catch {}
+  currentProfile = { ...(currentProfile || {}), photoURL: url };
+  broadcast();
+  return url;
 }
 
 export async function loginUser(email, password) {
@@ -129,6 +157,34 @@ export async function addCourse(data) {
   return addDoc(collection(db, "courses"), { ...data, createdAt: serverTimestamp() });
 }
 export const deleteCourse = (id) => deleteDoc(doc(db, "courses", id));
+export async function getCourse(id) {
+  const s = await getDoc(doc(db, "courses", id));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+
+/* ===== ✅ صورة غلاف الكورس ===== */
+export async function uploadCourseImage(file) {
+  const u = auth.currentUser; if (!u) throw new Error("سجّل دخول الأول");
+  if (!file.type.startsWith("image/")) throw new Error("اختر ملف صورة فقط");
+  if (file.size > 5 * 1024 * 1024) throw new Error("حجم الصورة أكبر من 5 ميجا");
+  const path = `courses/${u.uid}/${Date.now()}_${file.name}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file);
+  return getDownloadURL(storageRef);
+}
+
+/* ============================================================
+   3.1) ✅ محتوى الكورس (فيديو / PDF / امتحان) — يضيفه المعلم
+   ============================================================ */
+export async function addCourseContent(data) {
+  // data = { courseId, courseTitle, type: 'video'|'pdf'|'exam', title, url }
+  return addDoc(collection(db, "courseContent"), { ...data, createdAt: serverTimestamp() });
+}
+export const deleteCourseContent = (id) => deleteDoc(doc(db, "courseContent", id));
+export function watchCourseContent(courseId, cb) {
+  const q = query(collection(db, "courseContent"), where("courseId", "==", courseId), orderBy("createdAt", "desc"));
+  return onSnapshot(q, s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => { console.error(e); cb([]); });
+}
 
 /* ============================================================
    4) الاشتراك
@@ -146,6 +202,17 @@ export function watchMyEnrollments(cb) {
   const u = auth.currentUser; if (!u) return () => {};
   const q = query(collection(db, "enrollments"), where("uid", "==", u.uid));
   return onSnapshot(q, s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => console.error(e));
+}
+
+/* ===== ✅ المعلم يفعّل كورس لطالب مباشرة (من غير دفع) ===== */
+export async function grantCourseAccess(student, courseId, courseTitle) {
+  // student = { uid, name, email }
+  await setDoc(doc(db, "enrollments", `${student.uid}_${courseId}`), {
+    uid: student.uid, courseId, courseTitle,
+    name: student.name, email: student.email,
+    enrolledAt: serverTimestamp(), grantedByTeacher: true,
+  });
+  await logActivity("grant_access", courseId, `فعّل كورس "${courseTitle}" للطالب ${student.name}`);
 }
 
 /* ============================================================

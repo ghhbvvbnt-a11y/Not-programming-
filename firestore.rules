@@ -26,6 +26,11 @@ service cloud.firestore {
       allow read:   if signedIn();
       allow update, delete: if isTeacher();
     }
+    // ✅ محتوى الكورسات (فيديو/PDF/امتحان) — المعلم يضيف ويحذف، الكل يقرأ
+    match /courseContent/{id} {
+      allow read:  if signedIn();
+      allow write: if isTeacher();
+    }
     match /payments/{id} {
       allow create: if signedIn();
       allow read:   if signedIn();
